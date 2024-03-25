@@ -1,12 +1,12 @@
 pipeline {
     agent any
     tools {
-        nodejs 'node21'
+        nodejs 'NodeJS'
     }
     environment {
-        DOCKER_CREDENTIALS = credentials('d4506f04-b98c-47db-95ce-018ceac27ba6')
+        DOCKER_CREDENTIALS = credentials('Docker_hub')
         SCANNER_HOME = tool 'sonar-scanner'
-        IMAGE_NAME = 'idrisniyi94/youtube-cicd'
+        IMAGE_NAME = 'temiloladocker/youtube-cicd'
     }
     stages {
         stage('Clean workspace') {
@@ -16,13 +16,13 @@ pipeline {
         }
         stage('Checkout') {
             steps {
-                checkout scmGit(branches: [[name: '*/master']], extensions: [], userRemoteConfigs: [[url: 'https://github.com/stwins60/youtube-cicd.git']])
+               git branch: 'main', url: 'https://github.com/Temilolagit/youtube-cicd.git'
             }
         }
         stage('SonarQube analysis') {
             steps {
                 withSonarQubeEnv('sonar-server') {
-                    sh "${tool 'sonar-scanner'}/bin/sonar-scanner -Dsonar.projectKey=youtube-cicd -Dsonar.sources=."
+                    sh "${tool 'sonar-scanner'}/bin/sonar-scanner -Dsonar.projectKey=Youtube -Dsonar.sources=."
                 }
             }
         }
@@ -39,7 +39,7 @@ pipeline {
         stage('OWASP Dependency Check') {
             steps {
                 dependencyCheck additionalArguments: '--scan ./ --disableYarnAudit --disableNodeAudit --nvdApikey 4bdf4acc-8eae-45c1-bfc4-844d549be812',
-                odcInstallation: 'DP-Check'
+                odcInstallation: 'DP'
                 dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
             }
         }
@@ -55,15 +55,41 @@ pipeline {
                 sh "docker build -t $IMAGE_NAME ."
             }
         }
-        stage('Docker Push') {
-            steps {
-                sh "docker push $IMAGE_NAME"
-            }
-        }
+        
         stage('Trivy Image Scan') {
             steps {
                 sh "trivy image $IMAGE_NAME"
             }
         }
+        stage('Docker Push') {
+            steps {
+                sh "docker push $IMAGE_NAME"
+            }
+        }
+        stage('Containerization Deployment') {
+            steps {
+                script {
+                    def containername = 'reddit-clone-k8s'
+                    def isRunning = sh(script: "docker ps -a | grep ${containername}", returnStatus: true)
+                    if (isRunning == 0) {
+                        sh "docker stop ${containername}"
+                        sh "docker rm ${containername}"
+                    }
+                    sh "docker run -d -p 3000:3000 --name ${containername} temiloladocker/youtube-cicd:latest"
+                }                    
+            }
+        }
+        stage('Deploy to Kubernetes') {
+            steps {
+                withKubeConfig([credentialsId: 'kubeconfig']) {
+                
+
+                    sh 'kubectl apply -f deployment.yml'
+                    sh 'kubectl apply -f service.yml'
+                    // Wait for deployment to finish
+                    //sh 'kubectl rollout status -f path/to/your/deployment.yaml'
+                }
+            } 
+        }           
     }
 }
